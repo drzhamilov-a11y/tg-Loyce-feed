@@ -99,6 +99,7 @@ body{
 .wrap{max-width:720px;margin:0 auto;}
 .post{margin-bottom:14px;}
 
+/* КНОПКА ПОД ПОСТОМ */
 .open-btn{
   display:flex;
   align-items:center;
@@ -120,6 +121,13 @@ body{
   fill:#fff;
 }
 .open-btn:active{opacity:.85;}
+
+/* СКРЫВАЕМ САМОЛЁТИК TELEGRAM */
+.tgme_widget_message_header .tgme_widget_message_open_button,
+.tgme_widget_message_header .tgme_widget_message_open,
+.tgme_widget_message_header .tgme_widget_message_open_button_wrap{
+  display:none !important;
+}
 
 .btn{
   width:100%;
@@ -165,12 +173,13 @@ function appendTelegramPost(key){
   const a = document.createElement('a');
   a.className = 'open-btn';
   a.target = '_blank';
+  a.rel = 'noopener';
   a.href = 'https://t.me/' + key;
   a.innerHTML = \`
     <svg viewBox="0 0 240 240">
       <path d="M120 0C53.7 0 0 53.7 0 120s53.7 120 120 120 120-53.7 120-120S186.3 0 120 0zm58.5 82.1l-22.4 105.8c-1.7 7.6-6.2 9.5-12.6 5.9l-34.9-25.8-16.8 16.2c-1.9 1.9-3.4 3.4-7 3.4l2.5-35.6 64.8-58.6c2.8-2.5-.6-3.9-4.3-1.4l-80.1 50.4-34.5-10.8c-7.5-2.3-7.7-7.5 1.6-11.1l134.9-52c6.2-2.3 11.6 1.5 9.6 10z"/>
     </svg>
-    Открыть пост в Телеграм-канале!
+    Открыть пост в канале!
   \`;
 
   wrap.appendChild(s);
