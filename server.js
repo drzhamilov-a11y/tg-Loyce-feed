@@ -110,6 +110,21 @@ app.get("/widget", async (req, res) => {
     .post { margin: 0 0 12px 0; }
     .hint { color:#666; font-size:13px; margin: 10px 0; }
     .divider { height:1px; background:#eee; margin: 12px 0; }
+
+    /* кнопка под каждым постом */
+    .open-btn{
+      display:block;
+      margin:10px 0 18px;
+      padding:12px 14px;
+      border-radius:12px;
+      background:#0088cc; /* Telegram blue */
+      color:#fff;
+      text-decoration:none;
+      font-weight:600;
+      font-size:14px;
+      text-align:center;
+    }
+    .open-btn:active{ opacity:.85; }
   </style>
 </head>
 <body>
@@ -151,13 +166,25 @@ app.get("/widget", async (req, res) => {
     function appendTelegramPost(key, where='bottom'){
       const wrap = document.createElement('div');
       wrap.className = 'post';
+
       const s = document.createElement('script');
       s.async = true;
       s.src = 'https://telegram.org/js/telegram-widget.js?22';
       s.setAttribute('data-telegram-post', key);
       s.setAttribute('data-width', '100%');
       s.setAttribute('data-userpic', 'false');
+
+      // кнопка "Открыть пост в Телеграм-канале!"
+      const a = document.createElement('a');
+      a.className = 'open-btn';
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.textContent = 'Открыть пост в Телеграм-канале!';
+      a.href = 'https://t.me/' + key; // key = username/message_id
+
       wrap.appendChild(s);
+      wrap.appendChild(a);
+
       where === 'top' ? feedEl.prepend(wrap) : feedEl.appendChild(wrap);
     }
 
