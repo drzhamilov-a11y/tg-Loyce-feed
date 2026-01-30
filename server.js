@@ -2,7 +2,7 @@ import express from "express";
 import { createClient } from "@supabase/supabase-js";
 
 const {
-  BOT_TOKEN, // оставил, чтобы env не ломались, хотя прямо тут он не используется
+  BOT_TOKEN, // оставлено для совместимости env, напрямую не используется
   WEBHOOK_SECRET,
   CHANNEL_USERNAME,
   SUPABASE_URL,
@@ -10,7 +10,9 @@ const {
 } = process.env;
 
 if (!WEBHOOK_SECRET || !CHANNEL_USERNAME || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-  throw new Error("Missing env vars. Check WEBHOOK_SECRET, CHANNEL_USERNAME, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY");
+  throw new Error(
+    "Missing env vars. Check WEBHOOK_SECRET, CHANNEL_USERNAME, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY"
+  );
 }
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -50,7 +52,7 @@ app.post("/telegram/webhook", async (req, res) => {
 
 /* ===== API: отдаём список постов ===== */
 app.get("/api/feed", async (req, res) => {
-  const limit = Math.min(parseInt(req.query.limit || "5", 10), 30); // ← 5 по умолчанию
+  const limit = Math.min(parseInt(req.query.limit || "5", 10), 30); // 5 по умолчанию
   const before = req.query.before ? parseInt(req.query.before, 10) : null;
 
   let q = supabase
@@ -70,7 +72,6 @@ app.get("/api/feed", async (req, res) => {
     key: `${CHANNEL_USERNAME}/${r.message_id}`
   }));
 
-  // лёгкий кэш: виджет всё равно обновляется по кнопке
   res.setHeader("Cache-Control", "public, max-age=10");
   res.json({ items });
 });
@@ -88,8 +89,10 @@ app.get("/widget", (req, res) => {
   <!-- ускоряем первые подключения -->
   <link rel="preconnect" href="https://telegram.org">
   <link rel="preconnect" href="https://top-fwz1.mail.ru">
+  <link rel="preconnect" href="https://mc.yandex.ru">
   <link rel="dns-prefetch" href="//telegram.org">
   <link rel="dns-prefetch" href="//top-fwz1.mail.ru">
+  <link rel="dns-prefetch" href="//mc.yandex.ru">
 
   <!-- VK Pixel (Top.Mail.Ru) -->
   <script type="text/javascript">
@@ -105,6 +108,27 @@ app.get("/widget", (req, res) => {
   </script>
   <noscript><div><img src="https://top-fwz1.mail.ru/counter?id=3738381;js=na" style="position:absolute;left:-9999px;" alt="Top.Mail.Ru" /></div></noscript>
 
+  <!-- Yandex.Metrika -->
+  <script type="text/javascript">
+  (function(m,e,t,r,i,k,a){
+    m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
+    m[i].l=1*new Date();
+    for (var j = 0; j < document.scripts.length; j++) {
+      if (document.scripts[j].src === r) { return; }
+    }
+    k=e.createElement(t),a=e.getElementsByTagName(t)[0],
+    k.async=1,k.src=r,a.parentNode.insertBefore(k,a)
+  })(window, document, "script", "https://mc.yandex.ru/metrika/tag.js", "ym");
+
+  ym(82720792, "init", {
+    clickmap:true,
+    trackLinks:true,
+    accurateTrackBounce:true
+  });
+  </script>
+  <noscript><div><img src="https://mc.yandex.ru/watch/82720792" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+  <!-- /Yandex.Metrika -->
+
   <style>
     body { margin:0; padding:12px; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; background:#fff; }
     .wrap { max-width: 720px; margin: 0 auto; }
@@ -112,6 +136,7 @@ app.get("/widget", (req, res) => {
     .badge { font-size:12px; padding:6px 10px; border-radius:999px; background:#f2f2f2; }
     #feed { min-height: 40px; }
     .post { margin: 0 0 12px 0; position: relative; }
+
     .btn { width:100%; padding:12px 14px; border-radius:12px; border:1px solid #e6e6e6; background:#fafafa; cursor:pointer; font-size:14px; }
     .btn:disabled { opacity:0.6; cursor:default; }
 
@@ -167,16 +192,23 @@ app.get("/widget", (req, res) => {
 
     function setStatus(t){ statusEl.textContent = t; }
 
-    function trackGoal(){
+    function trackAll(){
+      // VK Pixel (Top.Mail.Ru)
       try {
         window._tmr = window._tmr || [];
-        // Важно: формат как у VK подсказки
         window._tmr.push({ type: 'reachGoal', id: 3738381, goal: 'tg_open' });
+      } catch (e) {}
+
+      // Yandex Metrika
+      try {
+        if (typeof ym === 'function') {
+          ym(82720792, 'reachGoal', 'tg_open');
+        }
       } catch (e) {}
     }
 
     function openWithTracking(url){
-      trackGoal();
+      trackAll();
       const w = window.open(url, '_blank', 'noopener');
       if (!w) window.location.href = url;
     }
@@ -195,7 +227,7 @@ app.get("/widget", (req, res) => {
 
       const postUrl = 'https://t.me/' + key;
 
-      // Telegram widget (скрипт на каждый пост — зато стабильно работает при динамической подгрузке)
+      // Telegram widget
       const s = document.createElement('script');
       s.async = true;
       s.src = 'https://telegram.org/js/telegram-widget.js?22';
@@ -271,7 +303,6 @@ app.get("/widget", (req, res) => {
       }
     }
 
-    // стартовая загрузка — 5 постов, без фонового опроса (быстрее и легче)
     loadMore();
     moreBtn.addEventListener('click', loadMore);
   </script>
