@@ -51,7 +51,7 @@ app.post("/telegram/webhook", async (req, res) => {
 
 /* ===== API feed ===== */
 app.get("/api/feed", async (req, res) => {
-  const limit = Math.min(parseInt(req.query.limit || "5", 10), 30);
+  const limit = Math.min(parseInt(req.query.limit || "3", 10), 30);
   const before = req.query.before ? parseInt(req.query.before, 10) : null;
   const after = req.query.after ? parseInt(req.query.after, 10) : null;
 
@@ -154,7 +154,7 @@ let loading = false;
 
 async function apiFeed(params){
   const url = new URL('/api/feed', location.origin);
-  url.searchParams.set('limit', '5'); // ← ДОБАВИЛИ
+  url.searchParams.set('limit', '3'); // ← ДОБАВИЛИ
   for(const k in params) url.searchParams.set(k, params[k]);
   const r = await fetch(url);
   return r.json();
