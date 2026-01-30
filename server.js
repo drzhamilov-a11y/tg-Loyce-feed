@@ -1,33 +1,23 @@
 import express from "express";
-import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
 
 const {
-  BOT_TOKEN,
+  BOT_TOKEN, // оставил, чтобы env не ломались, хотя прямо тут он не используется
   WEBHOOK_SECRET,
   CHANNEL_USERNAME,
   SUPABASE_URL,
-  SUPABASE_SERVICE_ROLE_KEY,
-  PUBLIC_BASE_URL
+  SUPABASE_SERVICE_ROLE_KEY
 } = process.env;
 
-if (
-  !BOT_TOKEN || !WEBHOOK_SECRET || !CHANNEL_USERNAME ||
-  !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !PUBLIC_BASE_URL
-) {
-  throw new Error("Missing env vars. Check BOT_TOKEN, WEBHOOK_SECRET, CHANNEL_USERNAME, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, PUBLIC_BASE_URL");
+if (!WEBHOOK_SECRET || !CHANNEL_USERNAME || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+  throw new Error("Missing env vars. Check WEBHOOK_SECRET, CHANNEL_USERNAME, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY");
 }
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 const app = express();
 app.use(express.json({ limit: "1mb" }));
 
-function makeEtag(obj) {
-  const json = JSON.stringify(obj);
-  return `"${crypto.createHash("sha1").update(json).digest("hex")}"`;
-}
-
-// Telegram webhook: принимает новые посты канала
+/* ===== Telegram webhook: сохраняем id поста ===== */
 app.post("/telegram/webhook", async (req, res) => {
   const token = req.header("X-Telegram-Bot-Api-Secret-Token");
   if (token !== WEBHOOK_SECRET) return res.sendStatus(401);
@@ -58,19 +48,17 @@ app.post("/telegram/webhook", async (req, res) => {
   return res.sendStatus(200);
 });
 
-// API: отдаёт список постов (по id), с пагинацией
+/* ===== API: отдаём список постов ===== */
 app.get("/api/feed", async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit || "5", 10), 30); // ← 5 по умолчанию
   const before = req.query.before ? parseInt(req.query.before, 10) : null;
-  const after = req.query.after ? parseInt(req.query.after, 10) : null;
 
   let q = supabase
     .from("tg_posts")
-    .select("message_id, posted_at")
+    .select("message_id")
     .eq("channel_username", CHANNEL_USERNAME);
 
   if (before) q = q.lt("message_id", before);
-  if (after) q = q.gt("message_id", after);
 
   q = q.order("message_id", { ascending: false }).limit(limit);
 
@@ -79,20 +67,16 @@ app.get("/api/feed", async (req, res) => {
 
   const items = (data || []).map(r => ({
     message_id: r.message_id,
-    posted_at: r.posted_at,
     key: `${CHANNEL_USERNAME}/${r.message_id}`
   }));
 
-  const etag = makeEtag(items);
-  res.setHeader("ETag", etag);
+  // лёгкий кэш: виджет всё равно обновляется по кнопке
   res.setHeader("Cache-Control", "public, max-age=10");
-  if (req.headers["if-none-match"] === etag) return res.sendStatus(304);
-
   res.json({ items });
 });
 
-// Виджет-страница: её будем встраивать в Taplink
-app.get("/widget", async (req, res) => {
+/* ===== Widget ===== */
+app.get("/widget", (req, res) => {
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.send(`<!doctype html>
 <html>
@@ -101,7 +85,13 @@ app.get("/widget", async (req, res) => {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Telegram feed</title>
 
-  <!-- Top.Mail.Ru counter (VK pixel) -->
+  <!-- ускоряем первые подключения -->
+  <link rel="preconnect" href="https://telegram.org">
+  <link rel="preconnect" href="https://top-fwz1.mail.ru">
+  <link rel="dns-prefetch" href="//telegram.org">
+  <link rel="dns-prefetch" href="//top-fwz1.mail.ru">
+
+  <!-- VK Pixel (Top.Mail.Ru) -->
   <script type="text/javascript">
   var _tmr = window._tmr || (window._tmr = []);
   _tmr.push({id: "3738381", type: "pageView", start: (new Date()).getTime()});
@@ -114,21 +104,17 @@ app.get("/widget", async (req, res) => {
   })(document, window, "tmr-code");
   </script>
   <noscript><div><img src="https://top-fwz1.mail.ru/counter?id=3738381;js=na" style="position:absolute;left:-9999px;" alt="Top.Mail.Ru" /></div></noscript>
-  <!-- /Top.Mail.Ru counter -->
 
   <style>
     body { margin:0; padding:12px; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; background:#fff; }
     .wrap { max-width: 720px; margin: 0 auto; }
-    .topbar { display:flex; gap:10px; align-items:center; margin-bottom:12px; }
-    .badge { font-size: 12px; padding: 6px 10px; border-radius: 999px; background: #f2f2f2; }
+    .head { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:10px; }
+    .badge { font-size:12px; padding:6px 10px; border-radius:999px; background:#f2f2f2; }
+    #feed { min-height: 40px; }
+    .post { margin: 0 0 12px 0; position: relative; }
     .btn { width:100%; padding:12px 14px; border-radius:12px; border:1px solid #e6e6e6; background:#fafafa; cursor:pointer; font-size:14px; }
     .btn:disabled { opacity:0.6; cursor:default; }
 
-    .post { margin: 0 0 12px 0; position: relative; }
-    .hint { color:#666; font-size:13px; margin: 10px 0; }
-    .divider { height:1px; background:#eee; margin: 12px 0; }
-
-    /* кнопка под каждым постом */
     .open-btn{
       display:flex;
       align-items:center;
@@ -143,12 +129,11 @@ app.get("/widget", async (req, res) => {
       text-decoration:none;
       font-weight:600;
       font-size:14px;
-      text-align:center;
     }
     .open-btn svg{ width:18px; height:18px; fill:#fff; }
     .open-btn:active{ opacity:.85; }
 
-    /* перехват клика по "самолётику" (он внутри iframe и его нельзя изменить напрямую) */
+    /* перехват зоны самолётика (внутри iframe трогать нельзя) */
     .tg-click-override{
       position:absolute;
       top:0;
@@ -160,59 +145,57 @@ app.get("/widget", async (req, res) => {
     }
   </style>
 </head>
+
 <body>
   <div class="wrap">
-    <div class="topbar">
+    <div class="head">
       <div class="badge">@${CHANNEL_USERNAME}</div>
       <div id="status" class="badge">загрузка…</div>
     </div>
 
-    <div id="newHint" class="hint" style="display:none;"></div>
     <div id="feed"></div>
-
-    <div class="divider"></div>
     <button id="moreBtn" class="btn">Показать ещё</button>
-    <div class="hint">Новые посты подгружаются автоматически.</div>
   </div>
 
   <script>
     const feedEl = document.getElementById('feed');
     const statusEl = document.getElementById('status');
     const moreBtn = document.getElementById('moreBtn');
-    const newHint = document.getElementById('newHint');
 
-    let newestId = null;
     let oldestId = null;
     let loading = false;
 
     function setStatus(t){ statusEl.textContent = t; }
 
-    function trackTmrGoal(goalName){
-      try{
+    function trackGoal(){
+      try {
         window._tmr = window._tmr || [];
-        window._tmr.push({ id: "3738381", type: "reachGoal", goal: goalName });
-      }catch(e){}
+        // Важно: формат как у VK подсказки
+        window._tmr.push({ type: 'reachGoal', id: 3738381, goal: 'tg_open' });
+      } catch (e) {}
     }
 
     function openWithTracking(url){
-      trackTmrGoal('tg_open');
+      trackGoal();
       const w = window.open(url, '_blank', 'noopener');
       if (!w) window.location.href = url;
     }
 
     async function apiFeed(params){
       const url = new URL('/api/feed', location.origin);
-      url.searchParams.set('limit','5'); // ← 5 постов за раз
-      for(const k in (params||{})) url.searchParams.set(k, params[k]);
-      const r = await fetch(url);
-      if (r.status === 304) return { items: [] };
+      url.searchParams.set('limit','5');
+      for (const k in (params||{})) url.searchParams.set(k, params[k]);
+      const r = await fetch(url.toString(), { cache: 'no-store' });
       return r.json();
     }
 
-    function appendTelegramPost(key, where='bottom'){
+    function appendTelegramPost(key){
       const wrap = document.createElement('div');
       wrap.className = 'post';
 
+      const postUrl = 'https://t.me/' + key;
+
+      // Telegram widget (скрипт на каждый пост — зато стабильно работает при динамической подгрузке)
       const s = document.createElement('script');
       s.async = true;
       s.src = 'https://telegram.org/js/telegram-widget.js?22';
@@ -220,113 +203,77 @@ app.get("/widget", async (req, res) => {
       s.setAttribute('data-width', '100%');
       s.setAttribute('data-userpic', 'false');
 
-      // перехват клика по зоне самолётика (ведём на нужный пост + событие пикселя)
+      // зона перехвата клика по самолётику
       const overlay = document.createElement('a');
       overlay.className = 'tg-click-override';
-      overlay.href = 'https://t.me/' + key;
+      overlay.href = postUrl;
       overlay.target = '_blank';
       overlay.rel = 'noopener';
       overlay.addEventListener('click', (e) => {
         e.preventDefault();
-        openWithTracking(overlay.href);
+        openWithTracking(postUrl);
       });
 
-      // кнопка "Открыть пост..."
+      // кнопка под постом
       const btn = document.createElement('a');
       btn.className = 'open-btn';
+      btn.href = postUrl;
       btn.target = '_blank';
       btn.rel = 'noopener';
-      btn.href = 'https://t.me/' + key;
       btn.innerHTML = \`
-        <svg viewBox="0 0 240 240" aria-hidden="true" focusable="false">
+        <svg viewBox="0 0 240 240" aria-hidden="true">
           <path d="M120 0C53.7 0 0 53.7 0 120s53.7 120 120 120 120-53.7 120-120S186.3 0 120 0zm58.5 82.1l-22.4 105.8c-1.7 7.6-6.2 9.5-12.6 5.9l-34.9-25.8-16.8 16.2c-1.9 1.9-3.4 3.4-7 3.4l2.5-35.6 64.8-58.6c2.8-2.5-.6-3.9-4.3-1.4l-80.1 50.4-34.5-10.8c-7.5-2.3-7.7-7.5 1.6-11.1l134.9-52c6.2-2.3 11.6 1.5 9.6 10z"/>
         </svg>
         Открыть пост в Телеграм-канале!
       \`;
       btn.addEventListener('click', (e) => {
         e.preventDefault();
-        openWithTracking(btn.href);
+        openWithTracking(postUrl);
       });
 
       wrap.appendChild(s);
       wrap.appendChild(overlay);
       wrap.appendChild(btn);
-
-      where === 'top' ? feedEl.prepend(wrap) : feedEl.appendChild(wrap);
+      feedEl.appendChild(wrap);
     }
 
-    function updateBounds(ids){
-      if (!ids.length) return;
-      const max = Math.max(...ids);
-      const min = Math.min(...ids);
-      newestId = newestId === null ? max : Math.max(newestId, max);
-      oldestId = oldestId === null ? min : Math.min(oldestId, min);
-    }
-
-    async function loadInitial(){
+    async function loadMore(){
       if (loading) return;
-      loading = true;
-      setStatus('загрузка…');
-      try {
-        const data = await apiFeed({});
-        const items = data.items || [];
-        if (!items.length){
-          setStatus('пока пусто');
-          moreBtn.disabled = true;
-          return;
-        }
-        updateBounds(items.map(x=>x.message_id));
-        for (const it of items) appendTelegramPost(it.key, 'bottom');
-        setStatus('онлайн');
-      } catch(e){
-        setStatus('ошибка');
-      } finally {
-        loading = false;
-      }
-    }
-
-    async function loadMoreOlder(){
-      if (loading || oldestId === null) return;
       loading = true;
       moreBtn.disabled = true;
       moreBtn.textContent = 'Загружаю…';
+
       try{
-        const data = await apiFeed({ before: oldestId });
+        const data = await apiFeed(oldestId ? { before: oldestId } : {});
         const items = data.items || [];
+
         if (!items.length){
+          setStatus('пусто');
           moreBtn.textContent = 'Больше нет постов';
           moreBtn.disabled = true;
           return;
         }
-        updateBounds(items.map(x=>x.message_id));
-        for (const it of items) appendTelegramPost(it.key, 'bottom');
+
+        for (const it of items) {
+          appendTelegramPost(it.key);
+          oldestId = oldestId === null ? it.message_id : Math.min(oldestId, it.message_id);
+        }
+
+        setStatus('онлайн');
         moreBtn.textContent = 'Показать ещё';
         moreBtn.disabled = false;
-      } catch(e){
+      }catch(e){
+        setStatus('ошибка');
         moreBtn.textContent = 'Показать ещё';
         moreBtn.disabled = false;
-      } finally {
+      }finally{
         loading = false;
       }
     }
 
-    async function pollNew(){
-      if (loading || newestId === null) return;
-      try{
-        const data = await apiFeed({ after: newestId });
-        const items = data.items || [];
-        if (!items.length) return;
-        items.reverse();
-        updateBounds(items.map(x=>x.message_id));
-        for (const it of items) appendTelegramPost(it.key, 'top');
-        newHint.style.display = 'block';
-        newHint.textContent = 'Добавлены новые посты: ' + items.length;
-        setTimeout(()=>{ newHint.style.display='none'; }, 2500);
-      } catch(e){}
-    }
-
-    moreBtn.addEventListener('click', loadMoreOlder);
-    loadInitial().then(()=> setInterval(pollNew, 25000));
+    // стартовая загрузка — 5 постов, без фонового опроса (быстрее и легче)
+    loadMore();
+    moreBtn.addEventListener('click', loadMore);
   </script>
 </body>
 </html>`);
